@@ -158,6 +158,7 @@ def run_or_load_seed_halo(args):
     else:
         init_box              = p21c.compute_initial_conditions(inputs=inputs)
         node_redshifts_sorted = sorted(inputs.node_redshifts)
+        n_nodes               = len(node_redshifts_sorted)
 
         halo_mass_lc  = np.full((HII_DIM, HII_DIM, n_lc), np.nan,
                                 dtype=np.float32)
@@ -167,7 +168,55 @@ def run_or_load_seed_halo(args):
         lcpix = lightconer.get_lc_distances_in_pixels(
             inputs.simulation_options.cell_size)
 
-        for i, z_node in enumerate(node_redshifts_sorted):
+        # ──────────────────────────────────────────────────────────────────
+        # OPTION A: SLICE-CENTRIC HALO LIGHTCONE
+        #
+        # The old loop iterated over node redshifts and wrote one LC index
+        # per node (argmin), leaving every other LC slice as NaN — hence the
+        # striped halo lightcone.  Here we instead iterate over EVERY LC
+        # slice and assign it to its nearest node redshift.  This partitions
+        # all n_lc slices across the nodes with no gaps and no double-writes,
+        # so the halo array fills continuously like the field lightcones.
+        #
+        # Per-node perturbed halo catalogues are computed lazily and cached
+        # in `node_cat_cache` so each node is evaluated at most once, and
+        # only if it actually owns at least one LC slice.
+        # ──────────────────────────────────────────────────────────────────
+
+        # slice -> owning node: nearest node in comoving distance
+        node_dc = np.array(
+            [cosmo.comoving_distance(zn).to_value('Mpc')
+             for zn in node_redshifts_sorted],
+            dtype=np.float64)
+        # owner[z_idx] = index into node_redshifts_sorted
+        owner = np.argmin(
+            np.abs(lc_distances[:, None] - node_dc[None, :]), axis=1)
+
+        # ──────────────────────────────────────────────────────────────────
+        # MEMORY-BOUNDED NODE-GROUPED LOOP
+        #
+        # The full-box catalogue for one node is large (~10^8 halos →
+        # ~GBs).  An earlier lazy-cache version kept every node's catalogue
+        # alive in a dict, which accumulated until the OOM killer terminated
+        # the worker (~14 min in).
+        #
+        # Fix: loop over NODES (outer), and for each node process ALL the LC
+        # slices it owns (inner), then explicitly `del` the catalogue before
+        # moving to the next node.  At most ONE node catalogue is alive at a
+        # time — peak memory is bounded by the single largest node, not the
+        # sum over all nodes.  No physics / output change.
+        # ──────────────────────────────────────────────────────────────────
+        import gc
+
+        for node_idx in range(n_nodes):
+            # which LC slices does this node own?
+            slices_here = np.where(owner == node_idx)[0]
+            if len(slices_here) == 0:
+                continue
+
+            z_node = node_redshifts_sorted[node_idx]
+
+            # ── compute the node's full-box mass-cut catalogue ──────────────
             halo_cat = p21c.determine_halo_catalog(
                 redshift           = z_node,
                 initial_conditions = init_box,
@@ -179,71 +228,82 @@ def run_or_load_seed_halo(args):
                 halo_catalog       = halo_cat,
             )
 
-            dc_node = cosmo.comoving_distance(z_node).to_value('Mpc')
-            z_idx   = np.argmin(np.abs(lc_distances - dc_node))
-
             masses_to_use = pt_halo_cat.get('halo_masses')
             coords_to_use = pt_halo_cat.get('halo_coords')
 
             if masses_to_use is None or len(masses_to_use) == 0:
                 print(f"  [seed {seed:3d}] z={z_node:.3f}  no halos",
                       flush=True)
+                del halo_cat, pt_halo_cat
+                gc.collect()
                 continue
 
             cut   = masses_to_use > MASS_CUT
             m_cut = masses_to_use[cut]
             c_cut = coords_to_use[cut]
+            # drop references to the un-cut arrays + p21c objects ASAP
+            del masses_to_use, coords_to_use, cut, halo_cat, pt_halo_cat
 
             if len(m_cut) == 0:
                 print(f"  [seed {seed:3d}] z={z_node:.3f}  "
                       f"0 halos above mass cut", flush=True)
+                del m_cut, c_cut
+                gc.collect()
                 continue
 
-            # ──────────────────────────────────────────────────────────────
-            # SLAB FILTER: Map LC slice to coeval z-layer (proper mapping)
-            # ──────────────────────────────────────────────────────────────
-            lcidx  = int((lcpix.max() - lcpix[z_idx] + 1*pixel)
-                         .to_value(pixel))
-            z_cell = (-lcidx + lightconer.index_offset) % HII_DIM
-            z_lo   = z_cell * cell_size_mpc
-            z_hi   = z_lo + cell_size_mpc
-
-            slab_mask = (c_cut[:, 2] >= z_lo) & (c_cut[:, 2] < z_hi)
-            m_slab    = m_cut[slab_mask]
-            c_slab    = c_cut[slab_mask]
-
-            if len(m_slab) == 0:
-                print(f"  [seed {seed:3d}] z={z_node:.3f}  "
-                      f"0 halos in slab [{z_lo:.2f}, {z_hi:.2f}] cMpc",
-                      flush=True)
-                continue
-
-            # ─── Save raw slab halos for HMF analysis ───
+            # ─── Save raw mass-cut halos for HMF analysis (once per node) ───
             tag = f"z{z_node:.4f}"
             np.save(os.path.join(halo_out_seed_dir, f"masses_{tag}.npy"),
-                    m_slab)
+                    m_cut)
             np.save(os.path.join(halo_out_seed_dir, f"coords_{tag}.npy"),
-                    c_slab)
+                    c_cut)
 
-            # Bin halos at this slice
-            mass_map, _, _ = np.histogram2d(
-                c_slab[:,0], c_slab[:,1],
-                bins=HII_DIM, range=[[0,BOX_LEN],[0,BOX_LEN]],
-                weights=m_slab)
-            count_map, _, _ = np.histogram2d(
-                c_slab[:,0], c_slab[:,1],
-                bins=HII_DIM, range=[[0,BOX_LEN],[0,BOX_LEN]])
+            # ── process every LC slice owned by this node ───────────────────
+            for z_idx in slices_here:
+                z_idx = int(z_idx)
 
-            with np.errstate(invalid='ignore', divide='ignore'):
-                avg_map = np.where(count_map > 0,
-                                   mass_map / count_map, np.nan)
+                # SLAB FILTER: map this LC slice to its coeval z-layer
+                lcidx  = int((lcpix.max() - lcpix[z_idx] + 1*pixel)
+                             .to_value(pixel))
+                z_cell = (-lcidx + lightconer.index_offset) % HII_DIM
+                z_lo   = z_cell * cell_size_mpc
+                z_hi   = z_lo + cell_size_mpc
 
-            halo_mass_lc [:,:,z_idx] = avg_map.T.astype(np.float32)
-            halo_count_lc[:,:,z_idx] = count_map.T.astype(np.float32)
+                slab_mask = (c_cut[:, 2] >= z_lo) & (c_cut[:, 2] < z_hi)
+                m_slab    = m_cut[slab_mask]
+                c_slab    = c_cut[slab_mask]
 
-            print(f"  [seed {seed:3d}] z={z_node:.3f}  {cut.sum():,} total  "
-                  f"→  {len(m_slab):,} in slab  "
-                  f"→  LC idx {z_idx}  z_cell {z_cell}", flush=True)
+                if len(m_slab) == 0:
+                    # genuinely empty slab (common at high z) — leave NaN/0
+                    continue
+
+                mass_map, _, _ = np.histogram2d(
+                    c_slab[:,0], c_slab[:,1],
+                    bins=HII_DIM, range=[[0,BOX_LEN],[0,BOX_LEN]],
+                    weights=m_slab)
+                count_map, _, _ = np.histogram2d(
+                    c_slab[:,0], c_slab[:,1],
+                    bins=HII_DIM, range=[[0,BOX_LEN],[0,BOX_LEN]])
+
+                with np.errstate(invalid='ignore', divide='ignore'):
+                    avg_map = np.where(count_map > 0,
+                                       mass_map / count_map, np.nan)
+
+                halo_mass_lc [:,:,z_idx] = avg_map.T.astype(np.float32)
+                halo_count_lc[:,:,z_idx] = count_map.T.astype(np.float32)
+
+                print(f"  [seed {seed:3d}] LC idx {z_idx:4d}  "
+                      f"z={z_node:.3f} (node {node_idx})  "
+                      f"{len(m_cut):,} in box  →  {len(m_slab):,} in slab  "
+                      f"z_cell {z_cell}", flush=True)
+
+            # ── free this node's catalogue before the next node ────────────
+            del m_cut, c_cut
+            gc.collect()
+
+        n_filled_seed = int(np.isfinite(halo_mass_lc).any(axis=(0,1)).sum())
+        print(f"  [seed {seed:3d}] halo lightcone: "
+              f"{n_filled_seed}/{n_lc} LC slices populated", flush=True)
 
         np.savez_compressed(
             halos_cache,
