@@ -1,0 +1,58 @@
+#!/bin/bash
+# =============================================================================
+# run_lae_diag.pbs  --  LAE diagnostics for one seed (plotting only)
+#
+# Light job: loads one lightcone + LAE catalogue, makes 3 figures.
+# Single seed via SEED env var (default 1).
+#
+# SUBMIT (seed 1):
+#     qsub run_lae_diag.pbs
+#
+# SUBMIT (other seed):
+#     qsub -v SEED=2 run_lae_diag.pbs
+# =============================================================================
+
+#PBS -N lae_diag
+#PBS -l select=1:ncpus=4:mem=32gb
+#PBS -l walltime=01:00:00
+#PBS -q workq
+#PBS -j oe
+#PBS -o lae_diag.log
+
+CONDA_BASE="/user1/swanith/miniconda3"
+CONDA_ENV="p21c_v41"
+PROJECT_ROOT="${PBS_O_WORKDIR}"
+
+set -euo pipefail
+cd "${PROJECT_ROOT}"
+
+# seed: from -v SEED=N, else default 1
+SEED="${SEED:-1}"
+
+echo "======================================================================"
+echo " PBS job     : ${PBS_JOBID}"
+echo " Seed        : ${SEED}"
+echo " Host        : $(hostname)"
+echo " Working dir : ${PROJECT_ROOT}"
+echo " Started     : $(date)"
+echo "======================================================================"
+
+if [ -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]; then
+    source "${CONDA_BASE}/etc/profile.d/conda.sh"
+else
+    echo "FATAL: conda.sh not found under ${CONDA_BASE}" >&2
+    exit 1
+fi
+conda activate "${CONDA_ENV}"
+
+echo " Python      : $(which python)"
+python --version
+
+python -u run_lae_diagnostics.py --seed "${SEED}" --root "${PROJECT_ROOT}" \
+    && RC=0 || RC=$?
+
+echo ""
+echo "======================================================================"
+echo " seed ${SEED} diagnostics finished  rc=${RC}   $(date)"
+echo "======================================================================"
+exit ${RC}

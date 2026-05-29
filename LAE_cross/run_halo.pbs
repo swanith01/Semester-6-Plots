@@ -1,0 +1,62 @@
+#!/bin/bash
+# =============================================================================
+# PBS submission script — kSZ²-Halo 5-seed pipeline
+#
+# Submit from /user1/swanith/ :
+#     qsub run_halo.pbs
+#
+# Monitor live :
+#     tail -f kSZ2_halo.log
+# =============================================================================
+
+#PBS -N kSZ2_halo_5seed
+#PBS -l select=1:ncpus=64
+#PBS -l walltime=12:00:00
+#PBS -j oe
+#PBS -o kSZ2_halo.log
+
+# ---- optional; fill in / uncomment if your cluster requires them ------------
+##PBS -q <queue_name>
+##PBS -A <project_name>
+##PBS -m abe
+##PBS -M your.email@host
+# -----------------------------------------------------------------------------
+
+set -e
+
+# =============================================================================
+# Diagnostics
+# =============================================================================
+echo "==============================================================="
+echo "Job ID         : $PBS_JOBID"
+echo "Job Name       : $PBS_JOBNAME"
+echo "Node           : $(hostname)"
+echo "Start time     : $(date)"
+echo "Working dir    : $PBS_O_WORKDIR"
+echo "Allocated CPUs : $PBS_NCPUS"
+echo "==============================================================="
+
+cd "$PBS_O_WORKDIR"
+
+# =============================================================================
+# Conda environment
+# =============================================================================
+source "$HOME/miniconda3/etc/profile.d/conda.sh"
+conda activate p21c_v41
+
+echo "Python         : $(which python)"
+echo "Conda env      : $CONDA_DEFAULT_ENV"
+echo "py21cmfast     : $(python -c 'import py21cmfast as p; print(p.__version__)')"
+echo "==============================================================="
+
+# Headless matplotlib (script already calls matplotlib.use('Agg') but harmless)
+export MPLBACKEND=Agg
+
+# =============================================================================
+# Run the pipeline   (unbuffered output for live tail -f monitoring)
+# =============================================================================
+python -u kSZ_sqr_halo_14May.py
+
+echo "==============================================================="
+echo "End time : $(date)"
+echo "==============================================================="

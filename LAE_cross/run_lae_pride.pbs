@@ -1,0 +1,80 @@
+#!/bin/bash
+# =============================================================================
+# run_lae_pride.pbs  --  SiMPLE-Gen LAE pipeline, ONE seed, on the `pride` cluster
+#
+# Runs a single seed via run_seed_lae.py. Reads the already-cached input
+# lightcone from kSZ2_halo_project/cache/seed_N/ and writes this run's log
+# into a SEPARATE dated cache dir so it never collides with a swarm run.
+#
+# SUBMIT (from /user1/swanith):
+#     qsub -v SEED=2 run_lae_pride.pbs
+#
+# MONITOR:
+#     qstat <jobid>
+#
+# Output:  lae_seed_pride.log  in the submit dir.
+# =============================================================================
+#PBS -N lae_seed_pride
+#PBS -l select=1:ncpus=8:mem=32gb
+#PBS -l walltime=24:00:00
+#PBS -q workq
+#PBS -j oe
+#PBS -o lae_seed_pride.log
+# -----------------------------------------------------------------------------
+# Cluster-specific values (PBS Pro 2022.1, pride).
+#   workq        : the Exe queue
+#   PF21c_v41    : conda env with 21cmFAST v4.1.0 built against in-env GSL 28
+# -----------------------------------------------------------------------------
+CONDA_BASE="/user1/swanith/miniconda3"
+CONDA_ENV="PF21c_v41"
+# Project root. kSZ2_halo_project/cache/... resolves under here.
+# Submit this script from /user1/swanith.
+PROJECT_ROOT="${PBS_O_WORKDIR}"
+# Separate cache dir for THIS (pride) run's outputs/log -- keeps it apart
+# from swarm's cache/ so the two clusters never write the same files.
+OUT_CACHE="kSZ2_halo_project/cache_27May2026_pride"
+# -----------------------------------------------------------------------------
+set -euo pipefail
+cd "${PROJECT_ROOT}"
+echo "======================================================================"
+echo " PBS job        : ${PBS_JOBID}"
+echo " Seed           : ${SEED:-2}"
+echo " Host           : $(hostname)"
+echo " Working dir    : ${PROJECT_ROOT}"
+echo " Out cache      : ${OUT_CACHE}"
+echo " Started        : $(date)"
+echo "======================================================================"
+# --- activate conda --------------------------------------------------------
+if [ -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]; then
+    source "${CONDA_BASE}/etc/profile.d/conda.sh"
+else
+    echo "FATAL: conda.sh not found under ${CONDA_BASE}" >&2
+    exit 1
+fi
+conda activate "${CONDA_ENV}"
+# --- pride: make py21cmFAST find the in-env GSL 28 at runtime ---------------
+export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
+echo " Python         : $(which python)"
+python --version
+echo " CONDA_PREFIX   : ${CONDA_PREFIX}"
+echo " LD_LIBRARY_PATH: ${LD_LIBRARY_PATH}"
+# --- thread pinning --------------------------------------------------------
+export OMP_NUM_THREADS=8
+export MKL_NUM_THREADS=8
+export OPENBLAS_NUM_THREADS=8
+export NUMEXPR_NUM_THREADS=8
+# --- run the seed ----------------------------------------------------------
+SEED="${SEED:-2}"
+echo ""
+echo ">>> launching LAE pipeline for seed ${SEED} on pride"
+echo ""
+python -u run_seed_lae.py \
+    --seed "${SEED}" \
+    --root "${PROJECT_ROOT}" \
+    --out-cache "${OUT_CACHE}" \
+    && RC=0 || RC=$?
+echo ""
+echo "======================================================================"
+echo " seed ${SEED} finished  rc=${RC}   $(date)"
+echo "======================================================================"
+exit ${RC}
