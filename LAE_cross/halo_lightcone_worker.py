@@ -257,7 +257,30 @@ def run_or_load_seed_halo(args):
                     m_cut)
             np.save(os.path.join(halo_out_seed_dir, f"coords_{tag}.npy"),
                     c_cut)
-
+	    # ─── Save coeval field boxes for SiMPLEGen ───────────────────────
+            coeval_out = os.path.join(halo_out_seed_dir, f"coeval_{tag}")
+            if not os.path.exists(coeval_out):
+                os.makedirs(coeval_out, exist_ok=True)
+                coeval = p21c.run_coeval(
+                    inputs         = inputs,
+                    out_redshifts  = z_node,
+                    initial_conditions = init_box,
+                    write          = False,
+                )
+                box = coeval[0]
+                np.save(f"{coeval_out}/density.npy",
+                        box.density.astype(np.float32))
+                np.save(f"{coeval_out}/neutral_fraction.npy",
+                        box.neutral_fraction.astype(np.float32))
+                np.save(f"{coeval_out}/kinetic_temp.npy",
+                        box.kinetic_temperature.astype(np.float32))
+                np.save(f"{coeval_out}/velocity_z.npy",
+                        box.velocity_z.astype(np.float32))
+                del coeval, box
+                gc.collect()
+                print(f"  [seed {seed:3d}] z={z_node:.3f}  coeval boxes saved",
+                      flush=True)
+            # ─────────────────────────────────────────────────────────────────
             # ── process every LC slice owned by this node ───────────────────
             for z_idx in slices_here:
                 z_idx = int(z_idx)

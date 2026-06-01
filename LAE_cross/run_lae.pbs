@@ -1,83 +1,20 @@
 #!/bin/bash
-# =============================================================================
-# run_lae.pbs  --  SiMPLE-Gen LAE pipeline, 5 seeds as a PBS job array
-#
-# Each array index runs ONE seed via run_seed_lae.py. The scheduler places
-# the 5 jobs on whatever nodes are free, so the 5 seeds run in parallel with
-# no core / memory contention (unlike packing them onto one node).
-#
-# SUBMIT:
-#     qsub run_lae.pbs
-#
-# MONITOR:
-#     qstat -t <jobid>          # all 5 array sub-jobs
-#
-# Output:  lae_seed.o<jobid>.<index>  (one per seed) in the submit dir.
-# =============================================================================
-
 #PBS -N lae_seed
-
 #PBS -l select=1:ncpus=16:mem=64gb
 #PBS -l walltime=24:00:00
 #PBS -q workq
 #PBS -j oe
-#PBS -o lae_seed.log
+#PBS -o lae_seed_${SEED}.log
 
-# -----------------------------------------------------------------------------
-# Cluster-specific values (PBS Pro 2022.1, swarm).
-#   workq      : the only Exe queue with capacity
-#   p21c_v41   : conda env with 21cmFAST v4.1.0
-# -----------------------------------------------------------------------------
 CONDA_BASE="/user1/swanith/miniconda3"
-CONDA_ENV="p21c_v41"
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
+conda activate p21c_v41
 
-# Project root = directory you submit this script from.
-# Submit from /user1/swanith  so that kSZ2_halo_project/cache/... resolves.
-PROJECT_ROOT="${PBS_O_WORKDIR}"
-
-# -----------------------------------------------------------------------------
-set -euo pipefail
-
-cd "${PROJECT_ROOT}"
-
-echo "======================================================================"
-echo " PBS job        : ${PBS_JOBID}"
-echo " Seed           : ${SEED:-1}"
-echo " Host           : $(hostname)"
-echo " Working dir    : ${PROJECT_ROOT}"
-echo " Started        : $(date)"
-echo "======================================================================"
-
-# --- activate conda --------------------------------------------------------
-if [ -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]; then
-    source "${CONDA_BASE}/etc/profile.d/conda.sh"
-else
-    echo "FATAL: conda.sh not found under ${CONDA_BASE}" >&2
-    exit 1
-fi
-conda activate "${CONDA_ENV}"
-
-echo " Python         : $(which python)"
-python --version
-
-# --- thread pinning so each seed uses its own node's cores cleanly ---------
 export OMP_NUM_THREADS=16
 export MKL_NUM_THREADS=16
 export OPENBLAS_NUM_THREADS=16
 export NUMEXPR_NUM_THREADS=16
 
-# --- run the seed ----------------------------------------------------------
-SEED="${SEED:-1}"
-
-echo ""
-echo ">>> launching LAE pipeline for seed ${SEED}"
-echo ""
-
-python -u run_seed_lae.py --seed "${SEED}" --root "${PROJECT_ROOT}" && RC=0 || RC=$?
-
-echo ""
-echo "======================================================================"
-echo " seed ${SEED} finished  rc=${RC}   $(date)"
-echo "======================================================================"
-
-exit ${RC}
+SEED="${SEED:-3}"
+cd "${PBS_O_WORKDIR}"
+python -u run_seed_lae.py --seed "${SEED}" --root "${PBS_O_WORKDIR}"
