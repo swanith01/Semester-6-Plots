@@ -34,8 +34,8 @@ DEFAULT_PROJECT_ROOT = os.getcwd()
 # IN_CACHE  : where the already-cached input lightcone.h5 lives (read-only).
 # OUT_CACHE : where THIS run writes its log / bookkeeping. Override with
 #             --out-cache so a pride run does not write into swarm's cache.
-IN_CACHE_SUBDIR  = "kSZ2_halo_project/cache"
-OUT_CACHE_SUBDIR = "kSZ2_halo_project/cache"  # default: same as input
+IN_CACHE_SUBDIR  = "kSZ2_halo_project/cache_64"
+OUT_CACHE_SUBDIR = "kSZ2_halo_project/cache_64"  # default: same as input
 
 # SiMPLE-Gen location and helper (CELL 2b)
 SIMPLEGEN_DIR = "/user1/swanith/SiMPLE-Gen"
@@ -45,7 +45,7 @@ HELPER        = os.path.join(SIMPLEGEN_DIR, "run_one_seed.py")
 Z_MIN          = 5.0
 Z_MAX          = 20.0
 Z_STEP_FACTOR  = 1.02
-HII_DIM        = 32
+HII_DIM        = 64
 BOX_LEN        = 400.0
 N_THREADS      = 32
 SAMPLER_MIN_MASS      = 1e8
@@ -115,6 +115,7 @@ def main():
     env["SIMPLEGEN_SEED"]    = str(seed)
     env["SIMPLEGEN_BOX_LEN"] = str(float(BOX_LEN))
     env["SIMPLEGEN_HII_DIM"] = str(int(HII_DIM))
+    env["SIMPLEGEN_HALO_DIR"] = f"/user1/swanith/lightcone_halos_64/catalogues/seed_{seed}"
     env["SIMPLEGEN_MH_CUT"]  = SIMPLEGEN_MH_CUT
 
     cmd = [

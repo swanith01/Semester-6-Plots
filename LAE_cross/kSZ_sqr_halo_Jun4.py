@@ -20,7 +20,7 @@ from astropy.cosmology import FlatLambdaCDM
 # CACHE
 # =============================================================================
 
-cache_dir     = "kSZ2_halo_project/cache"
+cache_dir     = "kSZ2_halo_project/cache_64"
 cache_dir_abs = os.path.abspath(cache_dir)
 os.makedirs(cache_dir, exist_ok=True)
 
@@ -36,7 +36,7 @@ print(f"✓ Cache              : {cache_dir_abs}")
 
 project_dir = "kSZ2_halo_project"
 plot_dir    = f"{project_dir}/plots"
-halo_dir    = "lightcone_halos/catalogues"
+halo_dir    = "lightcone_halos_64/catalogues"
 
 for d in [project_dir, plot_dir, cache_dir]:
     os.makedirs(d, exist_ok=True)
@@ -78,9 +78,9 @@ inputs = p21c.InputParameters(
     random_seed        = RANDOM_SEEDS[0],   # template; per-seed inputs built in CELL 2
 
     simulation_options = p21c.SimulationOptions(
-        HII_DIM               = 32,
+        HII_DIM               = 64,
         BOX_LEN               = 400.0,
-        N_THREADS             = 32,
+        N_THREADS             = 16,
         Z_HEAT_MAX            = 20.0,
         SAMPLER_MIN_MASS      = 1e8,
         SAMPLER_BUFFER_FACTOR = 2.0,
@@ -273,7 +273,7 @@ HALO_OUT      = halo_dir
 BOX_LEN       = float(inputs.simulation_options.BOX_LEN)
 HII_DIM       = int(inputs.simulation_options.HII_DIM)
 cell_size_mpc = BOX_LEN / HII_DIM
-MASS_CUT      = 10.0**8.5   # M_sun
+MASS_CUT      = 10.0**9.5   # M_sun
 
 os.makedirs(HALO_OUT, exist_ok=True)
 
@@ -304,7 +304,7 @@ print(f"  Cell size          : {cell_size_mpc:.2f} cMpc")
 seed_metadata = {}   # {seed: {'seed_cache_dir', 'halo_out_seed_dir',
                      #         'sim_time', 'status', 'n_lc'}}
 scan_start = time.time()
-mp_ctx     = mp.get_context("spawn")
+mp_ctx     = mp.get_context("fork")
 
 print(f"\n{'='*70}")
 print(f"DISPATCHING {N_SEEDS} SEEDS — {N_WORKERS} concurrent workers")
@@ -2443,7 +2443,7 @@ print(f"\n{'='*70}")
 print(f"DISPATCHING {len(worker_args)} SEEDS — {N_WORKERS} concurrent workers")
 print(f"{'='*70}", flush=True)
 
-mp_ctx                 = mp.get_context("spawn")
+mp_ctx                 = mp.get_context("fork")
 halo_cross_results_all = {}
 scan_start             = time.time()
 
