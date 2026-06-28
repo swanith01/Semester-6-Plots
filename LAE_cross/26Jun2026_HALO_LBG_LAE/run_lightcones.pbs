@@ -1,0 +1,15 @@
+#!/bin/bash
+#PBS -N lc_400Mpc
+#PBS -l select=1:ncpus=4:mem=24gb
+#PBS -l walltime=12:00:00
+#PBS -q workq
+#PBS -j oe
+#PBS -o /user1/swanith/kSZ2_halo_project/26Jun2026_400Mpc_halo_LAE_LBG/logs/pbs_${PBS_JOBID}.log
+
+# ── Activate conda env ────────────────────────────────────────────────────────
+source /user1/swanith/miniconda3/etc/profile.d/conda.sh
+conda activate p21c_v41
+
+# ── Run the stitching script ──────────────────────────────────────────────────
+cd /user1/swanith/kSZ2_halo_project/26Jun2026_400Mpc_halo_LAE_LBG/
+python stitch_lightcones.py 2>&1 | tee logs/run_${PBS_JOBID}.log

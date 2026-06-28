@@ -1,0 +1,13 @@
+#!/bin/bash
+#PBS -N typeB_grids
+#PBS -l select=1:ncpus=4:mem=24gb
+#PBS -l walltime=02:00:00
+#PBS -q workq
+#PBS -j oe
+#PBS -o /user1/swanith/kSZ2_halo_project/26Jun2026_400Mpc_halo_LAE_LBG/logs/typeB_${PBS_JOBID}.log
+
+source /user1/swanith/miniconda3/etc/profile.d/conda.sh
+conda activate p21c_v41
+
+cd /user1/swanith/kSZ2_halo_project/26Jun2026_400Mpc_halo_LAE_LBG/
+python type_b_grids.py 2>&1 | tee logs/typeB_run_${PBS_JOBID}.log
