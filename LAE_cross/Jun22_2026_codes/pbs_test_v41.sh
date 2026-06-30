@@ -2,7 +2,7 @@
 # =============================================================================
 # pbs_test_v41.sh
 # Tests whether py21cmfast v4.1.0 has the PerturbHaloField out-of-bounds fix
-# for BOX_LEN=200, HII_DIM=512, DIM=512
+# for BOX_LEN=200, HII_DIM=300, DIM=512
 #
 # USAGE:
 #   qsub pbs_test_v41.sh
@@ -11,7 +11,7 @@
 
 #PBS -N p21c_v41_test
 #PBS -l select=1:ncpus=4:mem=50gb
-#PBS -l walltime=00:30:00
+#PBS -l walltime=02:00:00
 #PBS -q workq
 #PBS -j oe
 #PBS -o /user1/swanith/kSZ2_LAE_project_22Jun2026/logs/
@@ -33,7 +33,7 @@ import py21cmfast as p21c
 import tempfile, os, sys
 
 print(f"py21cmfast version: {p21c.__version__}")
-print(f"Testing BOX_LEN=200, HII_DIM=512, DIM=512 ...")
+print(f"Testing BOX_LEN=200, HII_DIM=300, DIM=512 ...")
 print(f"(same params that crashed in p21c_v4dev312)")
 sys.stdout.flush()
 
@@ -44,9 +44,9 @@ with tempfile.TemporaryDirectory() as t:
     inputs = p21c.InputParameters(
         random_seed=1,
         simulation_options=p21c.SimulationOptions(
-            BOX_LEN=200.0,
-            HII_DIM=512,
-            DIM=512,
+            BOX_LEN=300.0,
+            HII_DIM=300,
+            DIM=600,
             N_THREADS=4,
             SAMPLER_MIN_MASS=1e8,
             SAMPLER_BUFFER_FACTOR=2.0,
@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory() as t:
     try:
         for cv, _ in p21c.generate_coeval(inputs=inputs, cache=cache):
             print(f"  ✓ z={cv.redshift:.4f} OK — no out-of-bounds crash")
-            cv.purge()
+            del cv
             break
     except Exception as e:
         print(f"  ✗ FAILED at high-z node: {e}")
@@ -93,7 +93,7 @@ with tempfile.TemporaryDirectory() as t:
         for cv, _ in p21c.generate_coeval(inputs=inputs, cache=cache):
             pass  # run all the way to z=5
         print(f"  ✓ z={cv.redshift:.4f} OK — all nodes passed")
-        cv.purge()
+        del cv
     except Exception as e:
         print(f"  ✗ FAILED: {e}")
         sys.exit(1)
